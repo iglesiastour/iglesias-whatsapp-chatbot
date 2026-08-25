@@ -13,6 +13,7 @@ from app.models.message import (
 from app.services.message_normalizer import normalize_test_message
 from app.services.ai.base import AIProviderError
 from app.services.ai.provider import get_ai_provider
+from app.services.safe_ai_service import SafeAIService
 
 
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -36,13 +37,14 @@ async def test_message(payload: TestMessageRequest) -> TestMessageResponse:
 
 @router.post("/process", response_model=ProcessMessageResponse)
 async def process_message(payload: TestMessageRequest) -> ProcessMessageResponse:
-    """Normalize a customer message and generate a reply with the AI provider."""
+    """Normalize a customer message and generate a safe AI reply."""
     normalized = normalize_test_message(payload)
 
     provider = get_ai_provider()
+    service = SafeAIService(provider)
 
     try:
-        reply = await provider.generate_reply(normalized.message)
+        result = await service.generate_reply(normalized.message)
     except AIProviderError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -53,6 +55,6 @@ async def process_message(payload: TestMessageRequest) -> ProcessMessageResponse
         success=True,
         data=ProcessMessageData(
             customer_phone=normalized.customer_phone,
-            reply=reply,
+            reply=result.reply,
         ),
 )
