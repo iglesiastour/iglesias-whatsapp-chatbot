@@ -10,11 +10,15 @@ from app.models.message import (
     TestMessageRequest,
     TestMessageResponse,
 )
+from app.db.connection import DatabaseNotConfiguredError
 from app.services.message_normalizer import normalize_test_message
 from app.security.prompt_guard import inspect_prompt
 from app.services.ai.base import AIProviderError
 from app.services.ai.provider import get_ai_provider
-from app.services.conversation_store import get_conversation_store
+from app.repositories.provider import (
+    RepositoryConfigurationError,
+    get_conversation_repository,
+)
 from app.services.conversation_pipeline_service import ConversationPipelineService
 from app.services.safe_ai_service import SafeAIService
 
@@ -43,15 +47,29 @@ async def process_message(payload: TestMessageRequest) -> ProcessMessageResponse
     """Normalize a customer message, update conversation state, and reply."""
     normalized = normalize_test_message(payload)
 
+    try:
+        repository = get_conversation_repository()
+    except RepositoryConfigurationError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Conversation storage is not configured correctly.",
+        ) from None
+
     provider = get_ai_provider()
-    store = get_conversation_store()
 
     # Prompt-injection messages must never reach entity extraction or alter
     # stored state; SafeAIService handles the safe conversational redirect.
     prompt_result = inspect_prompt(normalized.message)
 
     if prompt_result.is_safe:
-        current_state = store.get(normalized.customer_phone)
+        try:
+            current_state = repository.get(normalized.customer_phone)
+        except DatabaseNotConfiguredError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Conversation storage is unavailable.",
+            ) from None
+
         pipeline = ConversationPipelineService(provider)
 
         try:
@@ -66,9 +84,15 @@ async def process_message(payload: TestMessageRequest) -> ProcessMessageResponse
                 detail="AI service is unavailable.",
             ) from None
 
-        # State was successfully interpreted; keep it even if reply
-        # generation fails below (documented phase behavior).
-        store.save(normalized.customer_phone, updated_state)
+        try:
+            # State was successfully interpreted; keep it even if reply
+            # generation fails below (documented phase behavior).
+            repository.save(normalized.customer_phone, updated_state)
+        except DatabaseNotConfiguredError:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Conversation storage is unavailable.",
+            ) from None
 
     service = SafeAIService(provider)
 

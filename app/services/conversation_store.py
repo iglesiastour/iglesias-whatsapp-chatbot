@@ -1,19 +1,21 @@
-"""Temporary in-memory conversation state store.
+"""Temporary in-memory conversation state repository.
 
-DEVELOPMENT/TRANSITION ONLY: this store exists so conversation memory works
-end-to-end before a real database (e.g., PostgreSQL) replaces it. Its small
-interface (get/save/clear) is intentionally easy to swap later.
+DEVELOPMENT/TRANSITION ONLY: this implementation exists so conversation
+memory works end-to-end before a real database (e.g., PostgreSQL) replaces
+it via the ConversationRepository interface.
 """
 
 from app.models.conversation import ConversationState
+from app.repositories.conversation_repository import ConversationRepository
+from app.services.phone_normalizer import normalize_customer_phone
 
 
 def _normalize_phone(customer_phone: str) -> str:
-    """Normalize the customer phone used as the store key."""
-    return " ".join(customer_phone.split())
+    """Normalize the customer phone used as the storage key."""
+    return normalize_customer_phone(customer_phone)
 
 
-class InMemoryConversationStore:
+class InMemoryConversationStore(ConversationRepository):
     """In-memory ConversationState store keyed by normalized customer phone."""
 
     def __init__(self) -> None:
@@ -40,6 +42,6 @@ class InMemoryConversationStore:
 _store = InMemoryConversationStore()
 
 
-def get_conversation_store() -> InMemoryConversationStore:
+def get_conversation_store() -> ConversationRepository:
     """Return the process-wide conversation store instance."""
     return _store

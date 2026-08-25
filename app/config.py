@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_model: str = "openai/gpt-4.1-mini"
 
+    database_url: str = ""
+    conversation_repository_backend: str = "memory"
+
 
 @lru_cache
 def get_settings() -> Settings:
