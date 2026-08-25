@@ -20,7 +20,11 @@ class FakeProvider(AIProvider):
         self.reply = reply
         self.calls: list[str] = []
 
-    async def generate_reply(self, message: str) -> str:
+    async def generate_reply(
+        self,
+        message: str,
+        conversation_context: str | None = None,
+    ) -> str:
         self.calls.append(message)
         return self.reply
 
@@ -29,7 +33,11 @@ class FakeProvider(AIProvider):
 
 
 class ExplodingProvider(AIProvider):
-    async def generate_reply(self, message: str) -> str:
+    async def generate_reply(
+        self,
+        message: str,
+        conversation_context: str | None = None,
+    ) -> str:
         raise AIProviderError("provider failed")
 
     async def extract_entities(self, message: str) -> StructuredExtraction:

@@ -18,6 +18,9 @@ class SafetyCategory(StrEnum):
     DISCOUNT = "discount"
     PICKUP_TIME = "pickup_time"
     GUIDE_ASSIGNMENT = "guide_assignment"
+    OPERATIONAL_PROMISE = "operational_promise"
+    UNSUPPORTED_DETAIL = "unsupported_detail"
+    OPTIONAL_FIELD_REASK = "optional_field_reask"
 
 
 SAFETY_FALLBACKS: dict[SafetyCategory, str] = {
@@ -25,22 +28,31 @@ SAFETY_FALLBACKS: dict[SafetyCategory, str] = {
         "Our booking team will provide the latest available price based on your tour details."
     ),
     SafetyCategory.AVAILABILITY: (
-        "I'll check availability with our booking team."
+        "Availability needs to be confirmed by our booking team."
     ),
     SafetyCategory.BOOKING_CONFIRMATION: (
         "Your booking is not confirmed yet. Our booking team will confirm the details with you."
     ),
     SafetyCategory.CONTACT_INFORMATION: (
-        "I'll have our team provide the correct contact information."
+        "Our team can provide the correct contact information."
     ),
     SafetyCategory.DISCOUNT: (
-        "I'll check the available options with our booking team."
+        "Our booking team can check the available discount options."
     ),
     SafetyCategory.PICKUP_TIME: (
-        "I'll check the pickup details with our booking team."
+        "Pickup details will be confirmed by our booking team."
     ),
     SafetyCategory.GUIDE_ASSIGNMENT: (
         "Guide details will be confirmed by our booking team."
+    ),
+    SafetyCategory.OPERATIONAL_PROMISE: (
+        "I have the details you've provided. Our team can review the request and confirm the next steps."
+    ),
+    SafetyCategory.UNSUPPORTED_DETAIL: (
+        "I can help using the tour details currently available. Our team can confirm any additional options or specifics."
+    ),
+    SafetyCategory.OPTIONAL_FIELD_REASK: (
+        "I have the required booking details noted. Our team can review the request and confirm the next steps."
     ),
 }
 

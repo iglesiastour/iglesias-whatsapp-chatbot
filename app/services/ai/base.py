@@ -11,7 +11,11 @@ class AIProviderError(Exception):
 
 class AIProvider(ABC):
     @abstractmethod
-    async def generate_reply(self, message: str) -> str:
+    async def generate_reply(
+        self,
+        message: str,
+        conversation_context: str | None = None,
+    ) -> str:
         """Generate a reply for a customer message."""
         raise NotImplementedError
 

@@ -62,22 +62,39 @@ _EXTRACTION_RESPONSE_FORMAT = {
 class OpenRouterProvider(AIProvider):
     """Generate chatbot replies and structured extractions through OpenRouter."""
 
-    async def generate_reply(self, message: str) -> str:
+    async def generate_reply(
+        self,
+        message: str,
+        conversation_context: str | None = None,
+    ) -> str:
         if not settings.openrouter_api_key:
             raise AIProviderError("OPENROUTER_API_KEY is not configured.")
 
-        payload = {
-            "model": settings.openrouter_model,
-            "messages": [
+        messages: list[dict[str, str]] = [
+            {
+                "role": "system",
+                "content": build_system_prompt(),
+            },
+        ]
+
+        if conversation_context and conversation_context.strip():
+            messages.append(
                 {
                     "role": "system",
-                    "content": build_system_prompt(),
-                },
-                {
-                    "role": "user",
-                    "content": message,
-                },
-            ],
+                    "content": conversation_context,
+                }
+            )
+
+        messages.append(
+            {
+                "role": "user",
+                "content": message,
+            }
+        )
+
+        payload = {
+            "model": settings.openrouter_model,
+            "messages": messages,
             "temperature": 0.3,
         }
 

@@ -20,7 +20,9 @@ from app.repositories.provider import (
     get_conversation_repository,
 )
 from app.services.conversation_pipeline_service import ConversationPipelineService
+from app.prompts.conversation_context import build_conversation_context
 from app.services.safe_ai_service import SafeAIService
+from app.services.safety_fallback_service import SafetyFallbackContext
 
 
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -61,6 +63,8 @@ async def process_message(payload: TestMessageRequest) -> ProcessMessageResponse
     # stored state; SafeAIService handles the safe conversational redirect.
     prompt_result = inspect_prompt(normalized.message)
 
+    conversation_context: str | None = None
+
     if prompt_result.is_safe:
         try:
             current_state = repository.get(normalized.customer_phone)
@@ -94,10 +98,40 @@ async def process_message(payload: TestMessageRequest) -> ProcessMessageResponse
                 detail="Conversation storage is unavailable.",
             ) from None
 
+        conversation_context = build_conversation_context(
+            updated_state,
+            customer_name=normalized.customer_name,
+        )
+
     service = SafeAIService(provider)
 
+    known_tour = updated_state.tour if prompt_result.is_safe else None
+    booking_stage = updated_state.booking_stage if prompt_result.is_safe else None
+
+    fallback_context: SafetyFallbackContext | None = None
+    if prompt_result.is_safe:
+        fallback_context = SafetyFallbackContext(
+            tour=updated_state.tour,
+            travel_date=updated_state.travel_date,
+            adults=updated_state.adults,
+            children=updated_state.children,
+            cruise_ship=updated_state.cruise_ship,
+            hotel=updated_state.hotel,
+            pickup_location=updated_state.pickup_location,
+            preferred_language=updated_state.preferred_language,
+            booking_stage=updated_state.booking_stage,
+            requires_human=updated_state.requires_human,
+            missing_booking_fields=updated_state.missing_booking_fields(),
+        )
+
     try:
-        result = await service.generate_reply(normalized.message)
+        result = await service.generate_reply(
+            normalized.message,
+            conversation_context=conversation_context,
+            known_tour=known_tour,
+            booking_stage=booking_stage,
+            fallback_context=fallback_context,
+        )
     except AIProviderError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
