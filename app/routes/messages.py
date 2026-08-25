@@ -11,8 +11,11 @@ from app.models.message import (
     TestMessageResponse,
 )
 from app.services.message_normalizer import normalize_test_message
+from app.security.prompt_guard import inspect_prompt
 from app.services.ai.base import AIProviderError
 from app.services.ai.provider import get_ai_provider
+from app.services.conversation_store import get_conversation_store
+from app.services.conversation_pipeline_service import ConversationPipelineService
 from app.services.safe_ai_service import SafeAIService
 
 
@@ -37,10 +40,36 @@ async def test_message(payload: TestMessageRequest) -> TestMessageResponse:
 
 @router.post("/process", response_model=ProcessMessageResponse)
 async def process_message(payload: TestMessageRequest) -> ProcessMessageResponse:
-    """Normalize a customer message and generate a safe AI reply."""
+    """Normalize a customer message, update conversation state, and reply."""
     normalized = normalize_test_message(payload)
 
     provider = get_ai_provider()
+    store = get_conversation_store()
+
+    # Prompt-injection messages must never reach entity extraction or alter
+    # stored state; SafeAIService handles the safe conversational redirect.
+    prompt_result = inspect_prompt(normalized.message)
+
+    if prompt_result.is_safe:
+        current_state = store.get(normalized.customer_phone)
+        pipeline = ConversationPipelineService(provider)
+
+        try:
+            updated_state = await pipeline.process_message(
+                current_state,
+                normalized.message,
+            )
+        except AIProviderError:
+            # Do not save a partially updated state.
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="AI service is unavailable.",
+            ) from None
+
+        # State was successfully interpreted; keep it even if reply
+        # generation fails below (documented phase behavior).
+        store.save(normalized.customer_phone, updated_state)
+
     service = SafeAIService(provider)
 
     try:
