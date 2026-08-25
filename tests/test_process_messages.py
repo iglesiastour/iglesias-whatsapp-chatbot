@@ -3,18 +3,25 @@ from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
 
 from app.main import app
-from app.services.openrouter_client import OpenRouterError
+from app.services.ai.base import AIProvider, AIProviderError
 
 
 client = TestClient(app)
 URL = "/api/v1/messages/process"
 
 
+def _mock_provider(return_value: str | None = None, side_effect: Exception | None = None):
+    provider = AsyncMock(spec=AIProvider)
+    if side_effect is not None:
+        provider.generate_reply.side_effect = side_effect
+    else:
+        provider.generate_reply.return_value = return_value
+    return patch("app.routes.messages.get_ai_provider", return_value=provider)
+
+
 def test_successful_ai_response() -> None:
-    with patch(
-        "app.routes.messages.generate_reply",
-        new=AsyncMock(return_value="Hello Maria"),
-    ) as generate:
+    with _mock_provider(return_value="Hello Maria") as factory:
+        provider = factory.return_value
         response = client.post(
             URL,
             json={
@@ -33,14 +40,11 @@ def test_successful_ai_response() -> None:
         },
     }
 
-    generate.assert_awaited_once_with("Hello")
+    provider.generate_reply.assert_awaited_once_with("Hello")
 
 
 def test_ai_service_failure() -> None:
-    with patch(
-        "app.routes.messages.generate_reply",
-        new=AsyncMock(side_effect=OpenRouterError("provider failed")),
-    ):
+    with _mock_provider(side_effect=AIProviderError("provider failed")):
         response = client.post(
             URL,
             json={
@@ -68,10 +72,8 @@ def test_invalid_incoming_payload() -> None:
 
 
 def test_name_missing_but_message_valid() -> None:
-    with patch(
-        "app.routes.messages.generate_reply",
-        new=AsyncMock(return_value="Hello"),
-    ) as generate:
+    with _mock_provider(return_value="Hello") as factory:
+        provider = factory.return_value
         response = client.post(
             URL,
             json={
@@ -89,14 +91,12 @@ def test_name_missing_but_message_valid() -> None:
         },
     }
 
-    generate.assert_awaited_once_with("Hello")
+    provider.generate_reply.assert_awaited_once_with("Hello")
 
 
 def test_message_is_trimmed_before_ai_call() -> None:
-    with patch(
-        "app.routes.messages.generate_reply",
-        new=AsyncMock(return_value="Hello"),
-    ) as generate:
+    with _mock_provider(return_value="Hello") as factory:
+        provider = factory.return_value
         response = client.post(
             URL,
             json={
@@ -107,4 +107,4 @@ def test_message_is_trimmed_before_ai_call() -> None:
         )
 
     assert response.status_code == 200
-    generate.assert_awaited_once_with("Hello")
+    provider.generate_reply.assert_awaited_once_with("Hello")
