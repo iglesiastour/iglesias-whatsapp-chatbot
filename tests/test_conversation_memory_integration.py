@@ -58,7 +58,11 @@ class MemoryFakeProvider(AIProvider):
         self.extract_calls: list[str] = []
         self.reply_calls: list[str] = []
 
-    async def generate_reply(self, message: str) -> str:
+    async def generate_reply(
+        self,
+        message: str,
+        conversation_context: str | None = None,
+    ) -> str:
         self.reply_calls.append(message)
         if self.reply_exception is not None:
             raise self.reply_exception

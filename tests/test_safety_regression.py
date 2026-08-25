@@ -31,7 +31,11 @@ class RegressionProvider(AIProvider):
         self.call_count = 0
         self.last_message: str | None = None
 
-    async def generate_reply(self, message: str) -> str:
+    async def generate_reply(
+        self,
+        message: str,
+        conversation_context: str | None = None,
+    ) -> str:
         self.call_count += 1
         self.last_message = message
         if self.exception is not None:

@@ -141,3 +141,226 @@ def test_missing_api_key_is_a_provider_error(monkeypatch) -> None:
     with pytest.raises(AIProviderError, match="OPENROUTER_API_KEY"):
         _run(OpenRouterProvider().generate_reply("Hello"))
 
+
+# --- Context-aware reply tests ---
+
+
+def test_no_context_keeps_two_message_structure(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+
+    captured: dict = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured["json"] = json
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={"choices": [{"message": {"content": "reply"}}]},
+        )
+
+    with (
+        patch(
+            "app.services.ai.openrouter.build_system_prompt",
+            return_value="SYS",
+        ),
+        patch.object(httpx.AsyncClient, "post", fake_post),
+    ):
+        _run(OpenRouterProvider().generate_reply("Hello"))
+
+    messages = captured["json"]["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+
+
+def test_context_supplied_creates_three_messages(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+
+    captured: dict = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured["json"] = json
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={"choices": [{"message": {"content": "reply"}}]},
+        )
+
+    with (
+        patch(
+            "app.services.ai.openrouter.build_system_prompt",
+            return_value="SYS",
+        ),
+        patch.object(httpx.AsyncClient, "post", fake_post),
+    ):
+        _run(
+            OpenRouterProvider().generate_reply(
+                "Hello",
+                conversation_context="Known tour: Ephesus",
+            )
+        )
+
+    messages = captured["json"]["messages"]
+    assert len(messages) == 3
+    assert messages[0]["role"] == "system"
+    assert messages[0]["content"] == "SYS"
+    assert messages[1]["role"] == "system"
+    assert messages[1]["content"] == "Known tour: Ephesus"
+    assert messages[2]["role"] == "user"
+    assert messages[2]["content"] == "Hello"
+
+
+def test_context_message_is_second_system_message(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+
+    captured: dict = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured["json"] = json
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={"choices": [{"message": {"content": "reply"}}]},
+        )
+
+    with (
+        patch(
+            "app.services.ai.openrouter.build_system_prompt",
+            return_value="SYS",
+        ),
+        patch.object(httpx.AsyncClient, "post", fake_post),
+    ):
+        _run(
+            OpenRouterProvider().generate_reply(
+                "msg",
+                conversation_context="ctx",
+            )
+        )
+
+    messages = captured["json"]["messages"]
+    assert messages[0]["content"] == "SYS"
+    assert messages[1]["content"] == "ctx"
+    assert messages[2]["content"] == "msg"
+
+
+def test_whitespace_only_context_omitted(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+
+    captured: dict = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured["json"] = json
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={"choices": [{"message": {"content": "reply"}}]},
+        )
+
+    with (
+        patch(
+            "app.services.ai.openrouter.build_system_prompt",
+            return_value="SYS",
+        ),
+        patch.object(httpx.AsyncClient, "post", fake_post),
+    ):
+        _run(
+            OpenRouterProvider().generate_reply(
+                "Hello",
+                conversation_context="   ",
+            )
+        )
+
+    messages = captured["json"]["messages"]
+    assert len(messages) == 2
+
+
+def test_context_does_not_expose_customer_phone(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+
+    captured: dict = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured["json"] = json
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={"choices": [{"message": {"content": "reply"}}]},
+        )
+
+    with (
+        patch(
+            "app.services.ai.openrouter.build_system_prompt",
+            return_value="SYS",
+        ),
+        patch.object(httpx.AsyncClient, "post", fake_post),
+    ):
+        _run(
+            OpenRouterProvider().generate_reply(
+                "Hello",
+                conversation_context="Known tour: Ephesus",
+            )
+        )
+
+    full_payload = str(captured["json"])
+    assert "+905551112233" not in full_payload
+
+
+def test_temperature_unchanged_with_context(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+
+    captured: dict = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured["json"] = json
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={"choices": [{"message": {"content": "reply"}}]},
+        )
+
+    with (
+        patch(
+            "app.services.ai.openrouter.build_system_prompt",
+            return_value="SYS",
+        ),
+        patch.object(httpx.AsyncClient, "post", fake_post),
+    ):
+        _run(
+            OpenRouterProvider().generate_reply(
+                "Hello",
+                conversation_context="ctx",
+            )
+        )
+
+    assert captured["json"]["temperature"] == 0.3
+
+
+def test_no_response_format_on_normal_reply(monkeypatch) -> None:
+    _patch_settings(monkeypatch)
+
+    captured: dict = {}
+
+    async def fake_post(self, url, headers=None, json=None):
+        captured["json"] = json
+        return httpx.Response(
+            200,
+            request=httpx.Request("POST", url),
+            json={"choices": [{"message": {"content": "reply"}}]},
+        )
+
+    with (
+        patch(
+            "app.services.ai.openrouter.build_system_prompt",
+            return_value="SYS",
+        ),
+        patch.object(httpx.AsyncClient, "post", fake_post),
+    ):
+        _run(
+            OpenRouterProvider().generate_reply(
+                "Hello",
+                conversation_context="ctx",
+            )
+        )
+
+    assert "response_format" not in captured["json"]
+
