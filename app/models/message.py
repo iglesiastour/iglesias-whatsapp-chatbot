@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -9,7 +9,7 @@ class TestMessageRequest(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    sender: str = Field(alias="from", min_length=1)
+    sender: Annotated[str, Field(alias="from", min_length=1)]
     name: str | None = None
     message: str = Field(min_length=1)
 

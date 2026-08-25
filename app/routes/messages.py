@@ -2,7 +2,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, status
 
-from app.config import settings
+
 from app.models.message import (
     MessageData,
     ProcessMessageData,
@@ -11,13 +11,7 @@ from app.models.message import (
     TestMessageResponse,
 )
 from app.services.message_normalizer import normalize_test_message
-from app.services.n8n_client import (
-    N8NConnectionError,
-    N8NNotConfiguredError,
-    N8NResponseError,
-    N8NTimeoutError,
-    forward_to_n8n,
-)
+from app.services.openrouter_client import OpenRouterError, generate_reply
 
 
 router = APIRouter(prefix="/messages", tags=["messages"])
@@ -41,28 +35,15 @@ async def test_message(payload: TestMessageRequest) -> TestMessageResponse:
 
 @router.post("/process", response_model=ProcessMessageResponse)
 async def process_message(payload: TestMessageRequest) -> ProcessMessageResponse:
-    """Normalize a customer message and forward it to the existing n8n workflow."""
+    """Normalize a customer message and generate a reply with OpenRouter."""
     normalized = normalize_test_message(payload)
+
     try:
-        reply = await forward_to_n8n(
-            normalized,
-            webhook_url=settings.n8n_webhook_url,
-            timeout_seconds=settings.n8n_timeout_seconds,
-        )
-    except N8NNotConfiguredError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Automation service is not configured.",
-        ) from None
-    except N8NTimeoutError:
-        raise HTTPException(
-            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
-            detail="Automation service timed out.",
-        ) from None
-    except (N8NConnectionError, N8NResponseError):
+        reply = await generate_reply(normalized.message)
+    except OpenRouterError:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Automation service is unavailable.",
+            detail="AI service is unavailable.",
         ) from None
 
     return ProcessMessageResponse(
@@ -71,4 +52,4 @@ async def process_message(payload: TestMessageRequest) -> ProcessMessageResponse
             customer_phone=normalized.customer_phone,
             reply=reply,
         ),
-    )
+)
