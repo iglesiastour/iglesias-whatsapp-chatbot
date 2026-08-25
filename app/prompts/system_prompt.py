@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 
 def build_system_prompt() -> str:
@@ -7,7 +7,7 @@ def build_system_prompt() -> str:
     This is the only place where business personality and safety rules live.
     """
 
-    today = datetime.utcnow().strftime("%d %B %Y")
+    today = datetime.now(timezone.utc).strftime("%d %B %Y")
 
     return f"""
 # IDENTITY
