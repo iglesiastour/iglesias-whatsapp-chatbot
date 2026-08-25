@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     whatsapp_phone_number_id: str = ""
     openai_api_key: str = ""
     google_sheets_id: str = ""
+    
+    openrouter_api_key: str = ""
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "openai/gpt-4.1-mini"
 
 
 @lru_cache
