@@ -5,6 +5,7 @@ import dataclasses
 
 import pytest
 
+from app.models.extraction import ExtractedEntities, StructuredExtraction
 from app.prompts.policies import SafetyCategory, get_safety_fallback
 from app.security.output_guard import inspect_ai_output
 from app.services.ai.base import AIProvider, AIProviderError
@@ -25,9 +26,15 @@ class FakeProvider(AIProvider):
         self.calls.append(message)
         return self.reply
 
+    async def extract_entities(self, message: str) -> StructuredExtraction:
+        return StructuredExtraction(entities=ExtractedEntities())
+
 
 class ExplodingProvider(AIProvider):
     async def generate_reply(self, message: str) -> str:
+        raise AIProviderError("provider failed")
+
+    async def extract_entities(self, message: str) -> StructuredExtraction:
         raise AIProviderError("provider failed")
 
 

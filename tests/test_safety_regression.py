@@ -9,6 +9,7 @@ import asyncio
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.models.extraction import ExtractedEntities, StructuredExtraction
 from app.prompts.policies import SafetyCategory, get_safety_fallback
 from app.services.ai.base import AIProvider, AIProviderError
 from app.services.safe_ai_service import INPUT_SAFETY_REPLY
@@ -36,6 +37,9 @@ class RegressionProvider(AIProvider):
         if self.exception is not None:
             raise self.exception
         return self.reply
+
+    async def extract_entities(self, message: str) -> StructuredExtraction:
+        return StructuredExtraction(entities=ExtractedEntities())
 
 
 def use(provider: AIProvider):
