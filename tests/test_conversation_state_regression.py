@@ -9,10 +9,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.main import app
+from app.config import settings
 from app.models.conversation import BookingStage, ConversationIntent, ConversationState
 from app.models.extraction import ExtractedEntities, StructuredExtraction
 from app.services.ai.base import AIProvider, AIProviderError
-from app.services.conversation_store import get_conversation_store
+from app.repositories.provider import get_conversation_repository
 
 client = TestClient(app)
 URL = "/api/v1/messages/process"
@@ -47,11 +48,17 @@ class RegressionFakeProvider(AIProvider):
 
 
 @pytest.fixture(autouse=True)
-def clean_store():
-    store = get_conversation_store()
+def clean_store(force_memory_backend):
+    store = get_conversation_repository()
     store.clear()
     yield
     store.clear()
+
+
+@pytest.fixture(autouse=True)
+def force_memory_backend(monkeypatch):
+    """Regression pack must be deterministic regardless of ambient env."""
+    monkeypatch.setattr(settings, "conversation_repository_backend", "memory")
 
 
 def use(provider):
@@ -67,7 +74,7 @@ def post(message: str, phone: str = PHONE_A):
 
 
 def stored(phone: str = PHONE_A) -> ConversationState:
-    return get_conversation_store().get(phone)
+    return get_conversation_repository().get(phone)
 
 
 # --- A. Two-turn booking completion ---
@@ -235,7 +242,7 @@ def test_i_reply_failure_keeps_processed_state() -> None:
 
 @pytest.mark.parametrize("stage", [BookingStage.CONFIRMED, BookingStage.CANCELLED])
 def test_j_authoritative_stages_protected_with_entity_updates(stage) -> None:
-    get_conversation_store().save(
+    get_conversation_repository().save(
         PHONE_A,
         ConversationState(booking_stage=stage),
     )
@@ -256,7 +263,7 @@ def test_j_authoritative_stages_protected_with_entity_updates(stage) -> None:
 
 
 def test_k_human_review_sticky_even_when_fields_complete() -> None:
-    get_conversation_store().save(
+    get_conversation_repository().save(
         PHONE_A,
         ConversationState(
             intent=ConversationIntent.BOOKING_REQUEST,
@@ -329,7 +336,7 @@ def test_provider_instantiated_once_per_request() -> None:
 
 
 def test_unknown_extraction_values_never_delete_stored_values() -> None:
-    get_conversation_store().save(
+    get_conversation_repository().save(
         PHONE_A,
         ConversationState(hotel="Korumar Hotel", pickup_location="Kusadasi Port"),
     )
