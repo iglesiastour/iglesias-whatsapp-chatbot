@@ -21,6 +21,7 @@ class Migration:
 MIGRATIONS: tuple[Migration, ...] = (
     Migration(version="0001", filename="0001_conversation_states.sql"),
     Migration(version="0002", filename="0002_handoff_requests.sql"),
+    Migration(version="0003", filename="0003_handoff_audit_events.sql"),
 )
 
 _MIGRATIONS_DIR = Path(__file__).resolve().parent

@@ -64,6 +64,26 @@ class InMemoryHandoffRepository(HandoffRepository):
             return None
         return self.get(handoff_id)
 
+    def list_handoffs(
+        self,
+        *,
+        status: HandoffStatus | None = None,
+        reason=None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[PersistedHandoff]:
+        """Filter by status/reason in stable insertion order, then paginate."""
+        from app.models.handoff import HandoffReason
+
+        matches = [
+            stored
+            for stored in self._store.values()
+            if (status is None or stored.status is status)
+            and (reason is None or stored.reason is reason)
+        ]
+        page = matches[offset : offset + limit]
+        return [stored.model_copy(deep=True) for stored in page]
+
     def update_status(
         self,
         handoff_id: UUID,

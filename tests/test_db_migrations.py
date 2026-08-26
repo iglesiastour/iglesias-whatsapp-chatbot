@@ -25,12 +25,14 @@ def test_migration_file_exists() -> None:
     assert load_migration_sql(MIGRATIONS[0]).strip() != ""
 
 
-def test_registry_contains_migrations_0001_and_0002() -> None:
-    assert len(MIGRATIONS) == 2
+def test_registry_contains_migrations_0001_0002_and_0003() -> None:
+    assert len(MIGRATIONS) == 3
     assert MIGRATIONS[0].version == "0001"
     assert MIGRATIONS[0].filename == "0001_conversation_states.sql"
     assert MIGRATIONS[1].version == "0002"
     assert MIGRATIONS[1].filename == "0002_handoff_requests.sql"
+    assert MIGRATIONS[2].version == "0003"
+    assert MIGRATIONS[2].filename == "0003_handoff_audit_events.sql"
 
 
 def test_0002_registered_after_0001() -> None:
@@ -261,5 +263,78 @@ def test_0002_idempotency_key_column_exists_not_null_unique() -> None:
 def test_0002_no_secret_like_literals() -> None:
     sql = _sql_0002().lower()
     for forbidden in ("api_key", "access_token", "secret", "password", "bearer"):
+        assert forbidden not in sql
+
+
+# --- 0003: handoff_audit_events schema ---
+
+
+def _sql_0003() -> str:
+    return load_migration_sql(MIGRATIONS[2])
+
+
+def test_0003_creates_handoff_audit_events_table() -> None:
+    assert "CREATE TABLE IF NOT EXISTS handoff_audit_events" in _sql_0003()
+
+
+def test_0003_registered_after_0002() -> None:
+    versions = [m.version for m in MIGRATIONS]
+    assert versions.index("0003") > versions.index("0002")
+
+
+def test_0003_id_is_uuid_primary_key() -> None:
+    assert "id UUID PRIMARY KEY" in _sql_0003()
+
+
+def test_0003_foreign_key_to_handoff_requests() -> None:
+    sql = _sql_0003()
+    assert "handoff_id UUID NOT NULL REFERENCES handoff_requests(id)" in sql
+
+
+def test_0003_no_on_delete_cascade() -> None:
+    assert "ON DELETE CASCADE" not in _sql_0003()
+
+
+def test_0003_columns_exist() -> None:
+    sql = _sql_0003()
+    for column in (
+        "action TEXT NOT NULL",
+        "previous_status TEXT NOT NULL",
+        "new_status TEXT NOT NULL",
+        "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+    ):
+        assert column in sql
+
+
+def test_0003_action_check_complete() -> None:
+    assert "'status_changed'" in _sql_0003()
+
+
+def test_0003_all_handoff_status_values_in_checks() -> None:
+    from app.models.handoff import HandoffStatus
+
+    for status in HandoffStatus:
+        assert f"'{status.value}'" in _sql_0003()
+
+
+@pytest.mark.parametrize(
+    "forbidden",
+    ["DROP TABLE", "TRUNCATE", "DELETE FROM", "ALTER TABLE", "DROP CONSTRAINT"],
+)
+def test_0003_no_destructive_sql(forbidden: str) -> None:
+    assert forbidden.upper() not in _sql_0003().upper()
+
+
+def test_0003_no_pii_or_secret_fields() -> None:
+    sql = _sql_0003().lower()
+    for forbidden in (
+        "customer_phone",
+        "customer_name",
+        "token",
+        "api_key",
+        "message",
+        "transcript",
+        "prompt",
+    ):
         assert forbidden not in sql
 
