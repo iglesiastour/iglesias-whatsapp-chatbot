@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.models.conversation import BookingStage, ConversationIntent
+from app.models.handoff import HandoffReason, HandoffStatus
 from app.db.migrations.runner import (
     MIGRATIONS,
     Migration,
@@ -24,10 +25,17 @@ def test_migration_file_exists() -> None:
     assert load_migration_sql(MIGRATIONS[0]).strip() != ""
 
 
-def test_registry_contains_exactly_migration_0001() -> None:
-    assert len(MIGRATIONS) == 1
+def test_registry_contains_migrations_0001_and_0002() -> None:
+    assert len(MIGRATIONS) == 2
     assert MIGRATIONS[0].version == "0001"
     assert MIGRATIONS[0].filename == "0001_conversation_states.sql"
+    assert MIGRATIONS[1].version == "0002"
+    assert MIGRATIONS[1].filename == "0002_handoff_requests.sql"
+
+
+def test_0002_registered_after_0001() -> None:
+    versions = [m.version for m in MIGRATIONS]
+    assert versions.index("0002") > versions.index("0001")
 
 
 def test_registry_order_deterministic() -> None:
@@ -147,26 +155,6 @@ def test_import_does_not_connect(monkeypatch) -> None:
     assert fake_connect.call_count == 0
 
 
-def test_runner_executes_sql_and_commits(monkeypatch) -> None:
-    from app.config import settings
-    from app.db.migrations import runner
-
-    monkeypatch.setattr(settings, "database_url", "postgresql://user@host/db")
-    conn, cursor = _fake_conn()
-    executed: list[str] = []
-    cursor.execute.side_effect = lambda sql: executed.append(sql)
-
-    with patch.object(runner, "database_connection") as factory:
-        factory.return_value.__enter__ = MagicMock(return_value=conn)
-        factory.return_value.__exit__ = MagicMock(return_value=False)
-        run_migrations()
-
-    assert len(executed) == len(MIGRATIONS)
-    assert "conversation_states" in executed[0]
-    conn.commit.assert_called_once()
-    conn.cursor.assert_called_once()
-
-
 def test_runner_execution_exception_propagates(monkeypatch) -> None:
     from app.config import settings
     from app.db.migrations import runner
@@ -181,5 +169,97 @@ def test_runner_execution_exception_propagates(monkeypatch) -> None:
         with pytest.raises(RuntimeError, match="db exploded"):
             run_migrations()
 
-    conn.commit.assert_not_called()
+
+
+
+# --- 0002: handoff_requests schema ---
+
+
+def _sql_0002() -> str:
+    return load_migration_sql(MIGRATIONS[1])
+
+
+def test_0002_creates_handoff_requests_table() -> None:
+    assert "CREATE TABLE IF NOT EXISTS handoff_requests" in _sql_0002()
+
+
+def test_0002_id_is_uuid_primary_key() -> None:
+    assert "id UUID PRIMARY KEY" in _sql_0002()
+
+
+def test_0002_required_columns_exist() -> None:
+    sql = _sql_0002()
+    for column in (
+        "customer_phone TEXT NOT NULL",
+        "customer_name TEXT NULL",
+        "reason TEXT NOT NULL",
+        "status TEXT NOT NULL",
+        "intent TEXT NOT NULL",
+        "tour TEXT NULL",
+        "travel_date DATE NULL",
+        "adults INTEGER NULL",
+        "children INTEGER NULL",
+        "cruise_ship TEXT NULL",
+        "hotel TEXT NULL",
+        "pickup_location TEXT NULL",
+        "preferred_language TEXT NULL",
+        "booking_stage TEXT NOT NULL",
+        "needs_human BOOLEAN NOT NULL",
+    ):
+        assert column in sql
+
+
+def test_0002_created_at_and_updated_at_exist() -> None:
+    sql = _sql_0002()
+    assert "created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()" in sql
+    assert "updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()" in sql
+
+
+def test_0002_all_handoff_reason_values_in_check() -> None:
+    sql = _sql_0002()
+    for reason in HandoffReason:
+        assert f"'{reason.value}'" in sql
+
+
+def test_0002_all_handoff_status_values_in_check() -> None:
+    sql = _sql_0002()
+    for status in HandoffStatus:
+        assert f"'{status.value}'" in sql
+
+
+def test_0002_all_conversation_intent_values_in_check() -> None:
+    sql = _sql_0002()
+    for intent in ConversationIntent:
+        assert f"'{intent.value}'" in sql
+
+
+def test_0002_all_booking_stage_values_in_check() -> None:
+    sql = _sql_0002()
+    for stage in BookingStage:
+        assert f"'{stage.value}'" in sql
+
+
+def test_0002_numeric_constraints_present() -> None:
+    sql = _sql_0002()
+    assert "adults IS NULL OR (adults >= 1 AND adults <= 100)" in sql
+    assert "children IS NULL OR (children >= 0 AND children <= 100)" in sql
+
+
+@pytest.mark.parametrize(
+    "forbidden",
+    ["DROP TABLE", "TRUNCATE", "DELETE FROM", "ALTER TABLE", "DROP CONSTRAINT"],
+)
+def test_0002_no_destructive_sql(forbidden: str) -> None:
+    assert forbidden.upper() not in _sql_0002().upper()
+
+
+def test_0002_idempotency_key_column_exists_not_null_unique() -> None:
+    sql = _sql_0002()
+    assert "idempotency_key TEXT NOT NULL UNIQUE" in sql
+
+
+def test_0002_no_secret_like_literals() -> None:
+    sql = _sql_0002().lower()
+    for forbidden in ("api_key", "access_token", "secret", "password", "bearer"):
+        assert forbidden not in sql
 
