@@ -11,7 +11,7 @@ from uuid import UUID
 from app.models.handoff import HandoffRequest, PersistedHandoff
 
 if TYPE_CHECKING:
-    from app.models.handoff import HandoffStatus
+    from app.models.handoff import HandoffReason, HandoffStatus
 
 
 class HandoffRepository(ABC):
@@ -35,6 +35,18 @@ class HandoffRepository(ABC):
         idempotency_key: str,
     ) -> PersistedHandoff | None:
         """Return an existing persisted handoff for a key, or None."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def list_handoffs(
+        self,
+        *,
+        status: "HandoffStatus | None" = None,
+        reason: "HandoffReason | None" = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[PersistedHandoff]:
+        """List persisted handoffs, newest-stable order, filtered/paginated."""
         raise NotImplementedError
 
     @abstractmethod

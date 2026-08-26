@@ -7,7 +7,7 @@ lifecycle service (Step 5).
 
 from uuid import UUID
 
-from app.models.handoff import PersistedHandoff
+from app.models.handoff import HandoffReason, HandoffStatus, PersistedHandoff
 from app.models.handoff_review import HandoffReview, build_handoff_review
 from app.repositories.handoff_repository import (
     HandoffNotFoundError,
@@ -25,3 +25,20 @@ class HandoffReviewService:
         if persisted is None:
             raise HandoffNotFoundError()
         return build_handoff_review(persisted)
+
+    def list_reviews(
+        self,
+        *,
+        status: HandoffStatus | None = None,
+        reason: HandoffReason | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[HandoffReview]:
+        """List safe review views (read-only; never mutates handoffs)."""
+        persisted_items = self._repository.list_handoffs(
+            status=status,
+            reason=reason,
+            limit=limit,
+            offset=offset,
+        )
+        return [build_handoff_review(item) for item in persisted_items]

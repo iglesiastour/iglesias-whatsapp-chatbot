@@ -67,6 +67,15 @@ def build_handoff_review(handoff: PersistedHandoff) -> HandoffReview:
     )
 
 
+class HandoffReviewListResponse(BaseModel):
+    """Paginated collection of safe handoff reviews."""
+
+    items: list[HandoffReview]
+    limit: int
+    offset: int
+    count: int
+
+
 def build_handoff_review_summary(review: HandoffReview) -> str:
     """Deterministic human-friendly text summary; unknown fields omitted."""
     lines = [

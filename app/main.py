@@ -2,6 +2,7 @@ from fastapi import FastAPI
 
 from app.config import settings
 from app.routes.messages import router as messages_router
+from app.routes.operator_handoffs import router as operator_handoffs_router
 
 
 app = FastAPI(
@@ -11,6 +12,7 @@ app = FastAPI(
 )
 
 app.include_router(messages_router, prefix="/api/v1")
+app.include_router(operator_handoffs_router, prefix="/api/v1")
 
 
 @app.get("/health", tags=["health"])

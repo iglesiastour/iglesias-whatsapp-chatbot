@@ -17,6 +17,10 @@ handoff lifecycle is fully independent of BookingStage.
 from uuid import UUID
 
 from app.models.handoff import HandoffStatus, PersistedHandoff
+from app.repositories.handoff_audit_repository import (
+    HandoffAuditError,
+    HandoffAuditRepository,
+)
 from app.repositories.handoff_repository import (
     HandoffNotFoundError,
     HandoffRepository,
@@ -63,15 +67,26 @@ def validate_handoff_transition(
 
 
 class HandoffLifecycleService:
-    def __init__(self, repository: HandoffRepository):
+    def __init__(
+        self,
+        repository: HandoffRepository,
+        audit_repository: HandoffAuditRepository | None = None,
+    ):
         self._repository = repository
+        self._audit_repository = audit_repository
 
     def transition(
         self,
         handoff_id: UUID,
         target_status: HandoffStatus,
     ) -> PersistedHandoff:
-        """Apply a human-owned status transition to a persisted handoff."""
+        """Apply a human-owned status transition to a persisted handoff.
+
+        Same-status transitions are idempotent and never produce audit events.
+        If an audit repository is configured and audit persistence fails AFTER
+        the status update, HandoffAuditError is raised — the status may already
+        be updated. No compensating rollback is attempted.
+        """
         existing = self._repository.get(handoff_id)
         if existing is None:
             raise HandoffNotFoundError()
@@ -81,4 +96,13 @@ class HandoffLifecycleService:
         if existing.status is target_status:
             return existing
 
-        return self._repository.update_status(handoff_id, target_status)
+        updated = self._repository.update_status(handoff_id, target_status)
+
+        if self._audit_repository is not None:
+            self._audit_repository.create_status_change(
+                handoff_id=handoff_id,
+                previous_status=existing.status,
+                new_status=updated.status,
+            )
+
+        return updated

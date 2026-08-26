@@ -6,10 +6,17 @@ Default is the safe in-memory backend; postgres must be explicitly chosen.
 
 from app.config import settings
 from app.repositories.conversation_repository import ConversationRepository
+from app.repositories.handoff_audit_repository import HandoffAuditRepository
 from app.repositories.handoff_repository import HandoffRepository
+from app.repositories.in_memory_handoff_audit_repository import (
+    InMemoryHandoffAuditRepository,
+)
 from app.repositories.in_memory_handoff_repository import InMemoryHandoffRepository
 from app.repositories.postgres_conversation_repository import (
     PostgresConversationRepository,
+)
+from app.repositories.postgres_handoff_audit_repository import (
+    PostgresHandoffAuditRepository,
 )
 from app.repositories.postgres_handoff_repository import PostgresHandoffRepository
 from app.services.conversation_store import InMemoryConversationStore
@@ -45,6 +52,21 @@ def get_handoff_repository() -> HandoffRepository:
         return PostgresHandoffRepository()
 
     raise RepositoryConfigurationError("Unsupported handoff repository backend.")
+
+
+def get_handoff_audit_repository() -> HandoffAuditRepository:
+    """Return the configured handoff audit repository implementation."""
+    backend = settings.conversation_repository_backend.strip().lower()
+
+    if backend == "memory":
+        return InMemoryHandoffAuditRepository()
+
+    if backend == "postgres":
+        return PostgresHandoffAuditRepository()
+
+    raise RepositoryConfigurationError(
+        "Unsupported handoff audit repository backend."
+    )
 
 
 _memory_instance = InMemoryConversationStore()

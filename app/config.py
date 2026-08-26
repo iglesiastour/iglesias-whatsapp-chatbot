@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     database_url: str = ""
     conversation_repository_backend: str = "memory"
 
+    operator_api_token: str = ""
+
 
 @lru_cache
 def get_settings() -> Settings:

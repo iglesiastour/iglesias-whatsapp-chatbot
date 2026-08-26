@@ -12,7 +12,12 @@ from psycopg import errors as psycopg_errors
 from psycopg.rows import dict_row
 
 from app.db.connection import database_connection
-from app.models.handoff import HandoffRequest, HandoffStatus, PersistedHandoff
+from app.models.handoff import (
+    HandoffReason,
+    HandoffRequest,
+    HandoffStatus,
+    PersistedHandoff,
+)
 from app.repositories.handoff_repository import (
     HandoffNotFoundError,
     HandoffRepository,
@@ -48,6 +53,8 @@ _UPDATE_STATUS_SQL = (
     "WHERE id = %s "
     "RETURNING " + _COLUMN_LIST
 )
+
+_LIST_SQL_BASE = "SELECT " + _COLUMN_LIST + " FROM handoff_requests"
 
 
 class PostgresHandoffRepository(HandoffRepository):
@@ -113,4 +120,39 @@ class PostgresHandoffRepository(HandoffRepository):
             conn.commit()
 
         return db_row_to_persisted_handoff(row)
+
+    def list_handoffs(
+        self,
+        *,
+        status: HandoffStatus | None = None,
+        reason: HandoffReason | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[PersistedHandoff]:
+        """List handoffs with optional status/reason filters, fixed order.
+
+        Only parameterized values are dynamic; the SQL text is assembled from
+        static clause strings (never interpolated query values).
+        """
+        clauses: list[str] = []
+        params: list[object] = []
+        if status is not None:
+            clauses.append("status = %s")
+            params.append(status.value)
+        if reason is not None:
+            clauses.append("reason = %s")
+            params.append(reason.value)
+
+        sql = _LIST_SQL_BASE
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        sql += " ORDER BY created_at ASC, id ASC LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+
+        with database_connection() as conn:
+            with conn.cursor(row_factory=dict_row) as cursor:
+                cursor.execute(sql, tuple(params))
+                rows = cursor.fetchall()
+
+        return [db_row_to_persisted_handoff(row) for row in rows]
 

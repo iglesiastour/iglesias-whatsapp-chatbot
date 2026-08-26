@@ -202,3 +202,139 @@ def test_no_ai_or_network_dependency(monkeypatch):
     result = service.transition(FIXED_ID, HandoffStatus.CANCELLED)
     assert result.status is HandoffStatus.CANCELLED
 
+
+# --- Audit integration (Phase 7 Step 4) -----------------------------------------
+
+
+def _audit_repo():
+    from app.repositories.in_memory_handoff_audit_repository import (
+        InMemoryHandoffAuditRepository,
+    )
+
+    return InMemoryHandoffAuditRepository()
+
+
+def _list_events(audit):
+    return audit.list_for_handoff(FIXED_ID)
+
+
+def test_audit_created_for_pending_to_in_review():
+    repo, _ = _seed(HandoffStatus.PENDING)
+    audit = _audit_repo()
+    service = HandoffLifecycleService(repo, audit_repository=audit)
+    service.transition(FIXED_ID, HandoffStatus.IN_REVIEW)
+
+    events = _list_events(audit)
+    assert len(events) == 1
+    assert events[0].previous_status is HandoffStatus.PENDING
+    assert events[0].new_status is HandoffStatus.IN_REVIEW
+
+
+@pytest.mark.parametrize(
+    "target",
+    [HandoffStatus.RESOLVED, HandoffStatus.CANCELLED],
+)
+def test_audit_created_for_pending_terminal(target):
+    repo, _ = _seed(HandoffStatus.PENDING)
+    audit = _audit_repo()
+    service = HandoffLifecycleService(repo, audit_repository=audit)
+    service.transition(FIXED_ID, target)
+
+    events = _list_events(audit)
+    assert len(events) == 1
+    assert events[0].previous_status is HandoffStatus.PENDING
+    assert events[0].new_status is target
+
+
+@pytest.mark.parametrize(
+    "target",
+    [HandoffStatus.RESOLVED, HandoffStatus.CANCELLED],
+)
+def test_audit_created_for_in_review_terminal(target):
+    repo, _ = _seed(HandoffStatus.IN_REVIEW)
+    audit = _audit_repo()
+    service = HandoffLifecycleService(repo, audit_repository=audit)
+    service.transition(FIXED_ID, target)
+
+    events = _list_events(audit)
+    assert len(events) == 1
+    assert events[0].previous_status is HandoffStatus.IN_REVIEW
+    assert events[0].new_status is target
+
+
+@pytest.mark.parametrize("status", list(HandoffStatus))
+def test_same_status_creates_zero_audit_events(status):
+    repo, _ = _seed(status)
+    audit = _audit_repo()
+    service = HandoffLifecycleService(repo, audit_repository=audit)
+    service.transition(FIXED_ID, status)
+
+    assert _list_events(audit) == []
+
+
+def test_invalid_transition_creates_zero_audit_events():
+    repo, _ = _seed(HandoffStatus.RESOLVED)
+    audit = _audit_repo()
+    service = HandoffLifecycleService(repo, audit_repository=audit)
+    with pytest.raises(InvalidHandoffTransitionError):
+        service.transition(FIXED_ID, HandoffStatus.PENDING)
+
+    assert _list_events(audit) == []
+
+
+def test_two_sequential_transitions_create_ordered_events():
+    repo, _ = _seed(HandoffStatus.PENDING)
+    audit = _audit_repo()
+    service = HandoffLifecycleService(repo, audit_repository=audit)
+    service.transition(FIXED_ID, HandoffStatus.IN_REVIEW)
+    service.transition(FIXED_ID, HandoffStatus.RESOLVED)
+
+    events = _list_events(audit)
+    assert len(events) == 2
+    assert events[0].previous_status is HandoffStatus.PENDING
+    assert events[0].new_status is HandoffStatus.IN_REVIEW
+    assert events[1].previous_status is HandoffStatus.IN_REVIEW
+    assert events[1].new_status is HandoffStatus.RESOLVED
+
+
+def test_same_status_after_resolved_creates_no_third_event():
+    repo, _ = _seed(HandoffStatus.PENDING)
+    audit = _audit_repo()
+    service = HandoffLifecycleService(repo, audit_repository=audit)
+    service.transition(FIXED_ID, HandoffStatus.IN_REVIEW)
+    service.transition(FIXED_ID, HandoffStatus.RESOLVED)
+    service.transition(FIXED_ID, HandoffStatus.RESOLVED)
+
+    assert len(_list_events(audit)) == 2
+
+
+def test_audit_failure_after_update_surfaces_error_and_status_updated():
+    from app.repositories.handoff_audit_repository import (
+        HandoffAuditError,
+        HandoffAuditRepository,
+    )
+
+    repo, _ = _seed(HandoffStatus.PENDING)
+    failing = MagicMock(spec=HandoffAuditRepository)
+    failing.create_status_change.side_effect = HandoffAuditError("audit failed")
+    service = HandoffLifecycleService(repo, audit_repository=failing)
+
+    with pytest.raises(HandoffAuditError):
+        service.transition(FIXED_ID, HandoffStatus.IN_REVIEW)
+
+    # Status may already be updated even though audit persistence failed
+    # (no compensating rollback is attempted).
+    stored = repo.get(FIXED_ID)
+    assert stored.status is HandoffStatus.IN_REVIEW
+
+
+def test_audit_integration_booking_stage_unchanged():
+    repo, previous = _seed(HandoffStatus.PENDING)
+    audit = _audit_repo()
+    service = HandoffLifecycleService(repo, audit_repository=audit)
+    updated = service.transition(FIXED_ID, HandoffStatus.RESOLVED)
+
+    assert updated.conversation_state.booking_stage is BookingStage.READY_FOR_REVIEW
+    stored = repo.get(FIXED_ID)
+    assert stored.conversation_state.booking_stage is BookingStage.READY_FOR_REVIEW
+
