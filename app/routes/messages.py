@@ -18,15 +18,59 @@ from app.services.ai.provider import get_ai_provider
 from app.repositories.provider import (
     RepositoryConfigurationError,
     get_conversation_repository,
+    get_handoff_repository,
 )
 from app.services.conversation_pipeline_service import ConversationPipelineService
 from app.prompts.conversation_context import build_conversation_context
+from app.services.handoff_service import HandoffService
 from app.services.safe_ai_service import SafeAIService
 from app.services.safety_fallback_service import SafetyFallbackContext
 
 
 router = APIRouter(prefix="/messages", tags=["messages"])
 logger = logging.getLogger(__name__)
+
+
+def _ensure_handoff(
+    customer_phone: str,
+    state,
+    customer_name: str | None,
+) -> None:
+    """Ensure a human-review handoff for persisted state (lazy factory use).
+
+    Narrow error boundary: only handoff construction/persistence failures are
+    mapped here; AI/validation errors are never caught.
+    """
+    try:
+        handoff_repository = get_handoff_repository()
+    except RepositoryConfigurationError:
+        # Do not echo invalid backend/config values.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Human review service is not configured correctly.",
+        ) from None
+
+    try:
+        handoff_service = HandoffService(handoff_repository)
+        handoff_service.ensure_handoff(
+            customer_phone=customer_phone,
+            state=state,
+            customer_name=customer_name,
+        )
+    except DatabaseNotConfiguredError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Human review service is unavailable.",
+        ) from None
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Handoff persistence failed.")
+        # Safe detail only: no SQL/UUID/key/backend leakage.
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Human review service is unavailable.",
+        ) from None
 
 
 @router.post("/test", response_model=TestMessageResponse)
@@ -97,6 +141,14 @@ async def process_message(payload: TestMessageRequest) -> ProcessMessageResponse
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Conversation storage is unavailable.",
             ) from None
+
+        # State is persisted; now ensure the human-review handoff from the
+        # UPDATED state. Idempotency and reason rules live in HandoffService.
+        _ensure_handoff(
+            customer_phone=normalized.customer_phone,
+            state=updated_state,
+            customer_name=normalized.customer_name,
+        )
 
         conversation_context = build_conversation_context(
             updated_state,
